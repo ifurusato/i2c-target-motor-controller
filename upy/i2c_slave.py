@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/micropython
 # -*- coding: utf-8 -*-
 #
 # Copyright 2020-2025 by Murray Altheim. All rights reserved. This file is part
@@ -12,7 +12,6 @@
 import sys
 import time
 from pyb import LED
-from machine import I2C, Pin
 from machine import I2CTarget
 from colorama import Fore, Style
 
@@ -69,6 +68,9 @@ class I2CSlave(object):
         # initialize response buffer with default ACK response
         self._send_response(Command.ACK, 0.0, 0.0, 0.0, 0.0)
         self._log.info('ready on bus {} at 0x{:02X}'.format(self._i2c_id, self._i2c_address))
+
+    def _clear_mem(self):
+        self._mem[:] = b'\x00' * len(self._mem)
     
     def enable(self):
         '''
@@ -107,7 +109,7 @@ class I2CSlave(object):
         if flags & I2CTarget.IRQ_END_WRITE:
             # master wrote a command - process it immediately
             try:
-                # Parse command payload from command buffer
+                # parse command payload from command buffer
                 cmd_bytes = bytes(self._mem[self.CMD_OFFSET:self.CMD_OFFSET + Payload.PACKET_SIZE])
                 cmd_payload = Payload.from_bytes(cmd_bytes)
                 if self._debug:
@@ -160,6 +162,7 @@ class I2CSlave(object):
             response = Payload(command, pfwd, sfwd, paft, saft)
             response_bytes = response.to_bytes() 
             # write to response buffer atomically using slice assignment
+#           self._clear_mem()
             self._mem[self.RSP_OFFSET:self.RSP_OFFSET + len(response_bytes)] = response_bytes
             if self._debug:
                 # debug: Show entire memory map
@@ -191,7 +194,7 @@ class I2CSlave(object):
             _speeds = self._motor_controller.get_speeds()
             self._send_response(Command.ACK, *_speeds)
         else:
-            self._send_response(Command.ERROR, _response.value, 0.0, 0.0, 0.0)
+            self._send_response(Command.ERROR, 0.0, 0.0, 0.0, 0.0) # return error code in position 1
     
     def _handle_go(self, payload):
         '''
@@ -208,7 +211,7 @@ class I2CSlave(object):
             _speeds = self._motor_controller.get_speeds()
             self._send_response(Command.ACK, *_speeds)
         else:
-            self._send_response(Command.ERROR, _response.value, 0.0, 0.0, 0.0)
+            self._send_response(Command.ERROR, 0.0, 0.0, 0.0, 0.0) # TODO return error code in position 1
 
     def _handle_request(self):
         '''

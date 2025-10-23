@@ -60,7 +60,7 @@ class I2CMasterController(Component):
         self._tx_count    = 0
         self._error_count = 0
         self._timeout     = 1.0  # seconds
-        self.set_tx_delay(700) # 700μs default
+        self.set_tx_delay(200) # 200μs default
         self._log.info('initialized for bus {}, slave at {:#04x}'.format(i2c_id, i2c_address))
 
     def set_tx_delay(self, usec):
@@ -85,8 +85,9 @@ class I2CMasterController(Component):
             response_payload = self._send_command(ping_payload)
             self._log.info(Fore.MAGENTA + 'PING response: {}'.format(response_payload))
             if response_payload.command is not Command.PING:
-                raise Exception('PING failed: expected PING, got {}'.format(response.code))
+                raise Exception('PING failed: expected PING, got {}'.format(response_payload.code))
             self._log.info(Fore.GREEN + 'PING successful, slave responded with ACK' + Style.RESET_ALL)
+            time.sleep(0.05)
             enable_payload = Payload(Command.ENABLE, 0.0, 0.0, 0.0, 0.0)
             response_payload = self._send_command(enable_payload)
             self._log.info(Fore.MAGENTA + 'ENABLE response: {}'.format(response_payload))
@@ -121,13 +122,13 @@ class I2CMasterController(Component):
                 # read response buffer in ONE transaction (block read)
                 rsp_bytes = self._bus.read_i2c_block_data(self._i2c_address, self.RSP_OFFSET, Payload.PACKET_SIZE)
                 response_payload = Payload.from_bytes(bytes(rsp_bytes))
-                _elapsed_ms = (dt.now() - _start_time).total_seconds() * 1000.0
 #               self._log.debug('received response: {}'.format(response_payload))
                 # check for error response
                 if response_payload.command == Command.ERROR:
                     error_code = int(response_payload.pfwd)
                     self._log.warning('slave returned ERROR code {}'.format(error_code))
                 else:
+                    _elapsed_ms = (dt.now() - _start_time).total_seconds() * 1000.0
                     if attempt > 0:
                         self._log.info(Fore.YELLOW + 'transaction complete on attempt {}: elapsed: {:4.2f}ms elapsed ({}/{} err/tx)'.format(
                                 attempt + 1, _elapsed_ms, self._error_count, self._tx_count))
@@ -171,8 +172,7 @@ class I2CMasterController(Component):
         if not self.enabled:
             self._log.warning('not enabled, cannot set motor speeds')
             return None
-
-        self._log.info('setting motor speeds: pfwd={:4.2f}, sfwd={:4.2f}, paft={:4.2f}, saft={:4.2f}'.format(pfwd, sfwd, paft, saft))
+#       self._log.debug('setting motor speeds: pfwd={:4.2f}, sfwd={:4.2f}, paft={:4.2f}, saft={:4.2f}'.format(pfwd, sfwd, paft, saft))
         go_payload = Payload(Command.GO, pfwd, sfwd, paft, saft)
         return self._send_command(go_payload)
 
@@ -243,20 +243,25 @@ def main():
         _level = Level.INFO
         config = ConfigLoader(Level.INFO).configure()
 
-
-        # Create master controller
+        # create master controller
         _log.info('creating I2C Master Controller…')
         master = I2CMasterController(config, i2c_id=1, i2c_address=0x43, level=Level.INFO)
 
-        # Enable (performs PING/ACK handshake)
-        _log.info('enabling (PING/ACK handshake)…')
-        master.enable()
 
         if DELAY_TUNING_TEST:
+
 
             _log.info('creating digital potentiometer…')
             digital_pot = DigitalPotentiometer(config, level=_level)
             digital_pot.set_output_range(0.0, 1.0)
+
+            # initially set delay
+            _value = digital_pot.get_scaled_value(False) # values 0.0-1.0
+            _delay_usec = _value * 2000.0
+            master.set_tx_delay(_delay_usec)
+
+            _log.info('enabling (PING/ACK handshake)…')
+            master.enable()
 
             _counter = itertools.count()
             _log.info('starting delay tuning…  (Ctrl-C to exit)')
@@ -264,8 +269,7 @@ def main():
 
                 _value = digital_pot.get_scaled_value(False) # values 0.0-1.0
                 _target_speed = 1.0 - abs((_value * 2.0) - 1.0)
-                _log.info(Fore.MAGENTA + Style.BRIGHT + 'target speed: {:4.2f}'.format(_target_speed))
-                master.enable()
+                _log.info(Fore.MAGENTA + 'target speed: {:4.2f}'.format(_target_speed))
 
                 _delay_usec = _value * 2000.0
                 master.set_tx_delay(_delay_usec)
@@ -275,23 +279,26 @@ def main():
 
                     _log.info('stopping motors…')
                     response = master.stop_motors()
-                    _log.info(Fore.GREEN + 'response: {}'.format(response))
+#                   _log.info(Fore.GREEN + 'response: {}'.format(response))
 
                 else:
                     digital_pot.set_rgb(digital_pot.value) # only on digital pot
 #                   _motor_controller.set_speed(Orientation.ALL, _value)
                     _log.info('setting motor speeds ({:d}%)…'.format(round(_target_speed * 100)))
                     response = master.set_motor_speeds(_target_speed, _target_speed, _target_speed, _target_speed)
-                    _log.info(Fore.GREEN + 'response: {}'.format(response))
+#                   _log.info(Fore.GREEN + 'response: {}'.format(response))
 
-                    if next(_counter) % 5 == 0:
-                        print('REQUEST STATUS...')
-                        response = master.request_status()
-                        _log.info(Fore.MAGENTA + 'status response: {}'.format(response))
+#                   if next(_counter) % 5 == 0:
+#                       print('REQUEST STATUS...')
+#                       response = master.request_status()
+#                       _log.info(Fore.MAGENTA + 'status response: {}'.format(response))
 
-                time.sleep(0.25)
+                time.sleep(0.0667)
 
         else:
+
+            _log.info('enabling (PING/ACK handshake)…')
+            master.enable()
 
             # Test: Request status
             _log.info('requesting initial status…')
