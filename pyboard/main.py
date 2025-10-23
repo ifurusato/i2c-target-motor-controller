@@ -1,0 +1,42 @@
+#!/micropython
+# -*- coding: utf-8 -*-
+#
+# Copyright 2020-2025 by Murray Altheim. All rights reserved. This file is part
+# of the Robot Operating System project, released under the MIT License. Please
+# see the LICENSE file included as part of this package.
+#
+# author:   Murray Altheim
+# created:  2025-10-21
+# modified: 2025-10-21
+
+import sys
+
+from i2c_slave import I2CSlave
+from config_loader import ConfigLoader
+from core.logger import Logger, Level
+
+# auto-clear: Remove cached modules to force reload
+for mod in ['main', 'i2c_slave', 'payload']:
+    if mod in sys.modules:
+        del sys.modules[mod]
+
+# ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+def main():
+
+    _slave = None
+    _config = ConfigLoader.configure('config.yaml')
+    if _config is None:
+        raise ValueError('failed to import configuration.')
+    _slave = I2CSlave(_config, level=Level.INFO)
+    _slave.enable()
+    try:
+        while True:
+            pass
+    except KeyboardInterrupt:
+        print('\nCtrl-C caught; exiting…')
+        _slave.disable()
+
+# auto-start when imported
+main()
+
+#EOF
