@@ -38,13 +38,13 @@ class I2CMasterController(Component):
     '''
     I2C Master controller for sending command Payloads to STM32 slave
     and receiving response Payloads.
-    
+
     This is a Component subclass that follows the standard enable/disable lifecycle.
     '''
     def __init__(self, config, i2c_id=1, i2c_address=0x43, level=Level.INFO):
         '''
         Initialize I2C master controller.
-        
+
         Args:
             config:       application configuration
             i2c_id:       I2C bus number (default 1 for Raspberry Pi)
@@ -62,10 +62,10 @@ class I2CMasterController(Component):
         self._timeout     = 1.0  # seconds
         self.set_tx_delay(700) # 700μs default
         self._log.info('initialized for bus {}, slave at {:#04x}'.format(i2c_id, i2c_address))
-    
+
     def set_tx_delay(self, usec):
         self._log.info(Fore.BLUE + 'tx delay: {:5.1f}µs'.format(usec))
-        self._tx_delay_usec = usec 
+        self._tx_delay_usec = usec
 
     def enable(self):
         '''
@@ -91,14 +91,14 @@ class I2CMasterController(Component):
             response_payload = self._send_command(enable_payload)
             self._log.info(Fore.MAGENTA + 'ENABLE response: {}'.format(response_payload))
             Component.enable(self)
-            
+
         except Exception as e:
             self._log.error('enable failed: {}'.format(e))
             if self._bus:
                 self._bus.close()
                 self._bus = None
             raise
-    
+
     def _send_command(self, payload, retry=True):
         '''
         Send command Payload to slave and read response.
@@ -107,7 +107,7 @@ class I2CMasterController(Component):
             raise Exception('I2C bus not open.')
         attempts = self._retry_count if retry else 1
         last_error = None
-        
+
         for attempt in range(attempts):
             try:
                 self._tx_count += 1
@@ -142,16 +142,16 @@ class I2CMasterController(Component):
                 self._log.warning('payload error (attempt {}/{}): {}'.format(attempt + 1, attempts, e))
                 if attempt < attempts - 1:
                     time.sleep(0.05)
-                    
+
             except Exception as e:
                 self._error_count += 1
                 last_error = e
                 self._log.warning('I2C error (attempt {}/{}): {}'.format(attempt + 1, attempts, e))
                 if attempt < attempts - 1:
                     time.sleep(0.05)
-                    
+
         raise Exception('command failed after {} attempts: {}'.format(attempts, last_error))
-    
+
     def stop_motors(self):
         '''
         Send STOP command to immediately stop all motors.
@@ -159,11 +159,11 @@ class I2CMasterController(Component):
         if not self.enabled:
             self._log.warning('not enabled, cannot send STOP')
             return None
-        
+
         self._log.info('sending STOP command')
         stop_payload = Payload(Command.STOP, 0.0, 0.0, 0.0, 0.0)
         return self._send_command(stop_payload)
-    
+
     def set_motor_speeds(self, pfwd, sfwd, paft, saft):
         '''
         Send GO command with motor speeds.
@@ -171,11 +171,11 @@ class I2CMasterController(Component):
         if not self.enabled:
             self._log.warning('not enabled, cannot set motor speeds')
             return None
-        
+
         self._log.info('setting motor speeds: pfwd={:4.2f}, sfwd={:4.2f}, paft={:4.2f}, saft={:4.2f}'.format(pfwd, sfwd, paft, saft))
         go_payload = Payload(Command.GO, pfwd, sfwd, paft, saft)
         return self._send_command(go_payload)
-    
+
     def request_status(self):
         '''
         Send REQUEST command to query slave status.
@@ -183,7 +183,7 @@ class I2CMasterController(Component):
         if not self.enabled:
             self._log.warning('not enabled, cannot request status')
             return None
-        
+
         _start_time = dt.now()
         self._log.info('requesting status from slave')
         request_payload = Payload(Command.REQUEST, 0.0, 0.0, 0.0, 0.0)
@@ -195,7 +195,7 @@ class I2CMasterController(Component):
 #           raise ValueError('REQUEST command returned {} instead of RESPONSE'.format(response_payload.code))
             self._log.warning('REQUEST command returned {} instead of RESPONSE'.format(response_payload.code))
         return response_payload
-    
+
     def disable(self):
         '''
         Disable the I2C master.
@@ -207,9 +207,9 @@ class I2CMasterController(Component):
                 self._send_command(disable_payload, retry=False)
             except Exception as e:
                 self._log.warning('error sending DISABLE: {}'.format(e))
-        
+
         Component.disable(self)
-    
+
     def close(self):
         '''
         Close the I2C master and bus.
@@ -222,13 +222,12 @@ class I2CMasterController(Component):
                 self._log.warning('error closing bus: {}'.format(e))
             finally:
                 self._bus = None
-        
+
         return Component.close(self)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def main():
 
-    VARIABLE_SPEED_TEST = False
     DELAY_TUNING_TEST   = True   # used to tune the transaction delay (0-2000µs)
 
     '''
@@ -248,30 +247,26 @@ def main():
         # Create master controller
         _log.info('creating I2C Master Controller…')
         master = I2CMasterController(config, i2c_id=1, i2c_address=0x43, level=Level.INFO)
-        
+
         # Enable (performs PING/ACK handshake)
         _log.info('enabling (PING/ACK handshake)…')
         master.enable()
-        
-        _log.info('creating digital potentiometer…')
-        digital_pot = DigitalPotentiometer(config, level=_level)
 
-        if VARIABLE_SPEED_TEST:
-            digital_pot.set_output_range(-1.0, 1.0)
-            pass
+        if DELAY_TUNING_TEST:
 
-        elif DELAY_TUNING_TEST:
+            _log.info('creating digital potentiometer…')
+            digital_pot = DigitalPotentiometer(config, level=_level)
+            digital_pot.set_output_range(0.0, 1.0)
 
             _counter = itertools.count()
-            digital_pot.set_output_range(0.0, 1.0)
             _log.info('starting delay tuning…  (Ctrl-C to exit)')
             while True:
-        
+
                 _value = digital_pot.get_scaled_value(False) # values 0.0-1.0
                 _target_speed = 1.0 - abs((_value * 2.0) - 1.0)
                 _log.info(Fore.MAGENTA + Style.BRIGHT + 'target speed: {:4.2f}'.format(_target_speed))
                 master.enable()
- 
+
                 _delay_usec = _value * 2000.0
                 master.set_tx_delay(_delay_usec)
                 if isclose(_target_speed, 0.0, abs_tol=0.08):
@@ -302,29 +297,29 @@ def main():
             _log.info('requesting initial status…')
             response = master.request_status()
             _log.info(Fore.GREEN + 'status response: {}'.format(response))
-            
+
             # Test: Set motor speeds
             _log.info('setting motor speeds (25%)…')
             response = master.set_motor_speeds(25.0, 25.0, 25.0, 25.0)
             _log.info(Fore.GREEN + 'response: {}'.format(response))
             time.sleep(0.05)
-            
+
             # Test: Increase speed
             _log.info('setting motor speeds (50%)…')
             response = master.set_motor_speeds(50.0, 50.0, 50.0, 50.0)
             _log.info(Fore.GREEN + 'response: {}'.format(response))
             time.sleep(0.05)
-            
+
             # Test: Stop motors
             _log.info('stopping motors…')
             response = master.stop_motors()
             _log.info(Fore.GREEN + 'response: {}'.format(response))
-            
+
             # Test: Request final status
             _log.info('requesting final status…')
             response = master.request_status()
             _log.info(Fore.GREEN + 'status response: {}'.format(response))
-            
+
             _log.info(Fore.GREEN + Style.BRIGHT + '\nall tests completed successfully!')
 
     except KeyboardInterrupt:
