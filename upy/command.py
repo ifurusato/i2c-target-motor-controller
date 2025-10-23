@@ -18,7 +18,6 @@ class Command:
         self._index = index
         self._code = code
         self._description = description
-        print('Command: {} {} {}'.format(self._index, self._code, self._description))
         Command._instances.append(self)
 
     @property

@@ -26,22 +26,6 @@ changes it could conceivably be used for any type of exchange of payload data
 between a Raspberry Pi master and microcontroller-based slave over I2C.
 
 
-Performance
-***********
-
-Test performance using a Pi Zero 2 W and a 168MHz WeAct STM32F405 has typically
-been around 1-2ms for a round trip (send payload, receive payload), with the I2C
-bus frequency set at 400KHz.
-
-A higher performance Raspberry Pi with a 1MHz I2C bus frequency and a faster
-microcontroller would provide even higher performance. The STM32 used previously
-with the Brushless Motor Controller was a 550MHz WeAct STM32H723, and this will
-be used for the final implementation.
-
-Conceivably any device capable of serving as I2C master and any microcontroller
-supported by I2CTarget could be used.
-
-
 Functional Description
 **********************
 
@@ -76,6 +60,22 @@ at using. The core of this project may be found in the following files::
 
 The rest are essentially support files, which could be refactored out of the project
 if you didn't want YAML configuration, logging, etc.
+
+
+Performance
+***********
+
+Test performance using a Pi Zero 2 W and a 168MHz WeAct STM32F405 has typically
+been around 1-2ms for a round trip (send payload, receive payload), with the I2C
+bus frequency set at 400KHz.
+
+A higher performance Raspberry Pi with a 1MHz I2C bus frequency and a faster
+microcontroller would provide even higher performance. The STM32 used previously
+with the Brushless Motor Controller was a 550MHz WeAct STM32H723, and this will
+be used for the final implementation.
+
+Conceivably any device capable of serving as I2C master and any microcontroller
+supported by I2CTarget could be used.
 
 
 Requirements

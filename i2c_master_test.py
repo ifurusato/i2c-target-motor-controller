@@ -24,9 +24,9 @@ from core.component import Component
 from core.config_loader import ConfigLoader
 from hardware.digital_pot import DigitalPotentiometer
 
-# add ./pyboard/ to sys.path
-if os.path.isdir("pyboard") and "pyboard" not in sys.path:
-    sys.path.insert(0, "pyboard")
+# add ./upy/ to sys.path
+if os.path.isdir("upy") and "upy" not in sys.path:
+    sys.path.insert(0, "upy")
 
 from payload import Payload
 from command import Command
