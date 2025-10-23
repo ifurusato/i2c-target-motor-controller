@@ -60,7 +60,8 @@ class I2CMasterController(Component):
         self._tx_count    = 0
         self._error_count = 0
         self._timeout     = 1.0  # seconds
-        self.set_tx_delay(200) # 200μs default
+        self._keepalive_test = False # tests the keepalive timeout
+        self.set_tx_delay(100) # 100μs default (works down to 1μS or zero in practice)
         self._log.info('initialized for bus {}, slave at {:#04x}'.format(i2c_id, i2c_address))
 
     def set_tx_delay(self, usec):
@@ -201,14 +202,14 @@ class I2CMasterController(Component):
         Disable the I2C master.
         '''
         if self.enabled:
-            try:
-                # Send DISABLE command to slave
-                disable_payload = Payload(Command.DISABLE, 0.0, 0.0, 0.0, 0.0)
-                self._send_command(disable_payload, retry=False)
-            except Exception as e:
-                self._log.warning('error sending DISABLE: {}'.format(e))
-
-        Component.disable(self)
+            if not self._keepalive_test:
+                try:
+                    # Send DISABLE command to slave
+                    disable_payload = Payload(Command.DISABLE, 0.0, 0.0, 0.0, 0.0)
+                    self._send_command(disable_payload, retry=False)
+                except Exception as e:
+                    self._log.warning('error sending DISABLE: {}'.format(e))
+            Component.disable(self)
 
     def close(self):
         '''

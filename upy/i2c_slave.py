@@ -70,8 +70,8 @@ class I2CSlave(object):
         self._log.info('ready on bus {} at 0x{:02X}'.format(self._i2c_id, self._i2c_address))
 
     def _clear_mem(self):
-        self._mem[:] = b'\x00' * len(self._mem)
-    
+        self._mem = bytearray(self.MEMORY_SIZE)
+
     def enable(self):
         '''
         Start I2C slave and register IRQ handler.
@@ -96,17 +96,19 @@ class I2CSlave(object):
         Stop I2C slave.
         '''
         if self._i2c:
+            self._clear_mem()
             self._i2c.deinit()
             self._i2c = None
             self._log.info('I2C slave disabled')
-    
+ 
     def _irq_handler(self, i2c_target):
         '''
         Handle I2C events from master.
         '''
         flags = i2c_target.irq().flags()
-        
         if flags & I2CTarget.IRQ_END_WRITE:
+            # clear response buffer immediately to prevent master from reading stale data
+            self._mem[self.RSP_OFFSET:self.RSP_OFFSET + Payload.PACKET_SIZE] = b'\x00' * Payload.PACKET_SIZE
             # master wrote a command - process it immediately
             try:
                 # parse command payload from command buffer
@@ -162,7 +164,6 @@ class I2CSlave(object):
             response = Payload(command, pfwd, sfwd, paft, saft)
             response_bytes = response.to_bytes() 
             # write to response buffer atomically using slice assignment
-#           self._clear_mem()
             self._mem[self.RSP_OFFSET:self.RSP_OFFSET + len(response_bytes)] = response_bytes
             if self._debug:
                 # debug: Show entire memory map
@@ -172,7 +173,7 @@ class I2CSlave(object):
         except Exception as e:
             self._log.error('{} raised sending response: {}'.format(type(e), e))
             sys.print_exception(e)
-    
+
     # command handlers ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
     
     def _handle_ping(self):
