@@ -11,6 +11,7 @@
 
 import sys
 import time
+from pyb import Timer
 from pyb import LED
 from machine import I2CTarget
 from colorama import Fore, Style
@@ -61,17 +62,21 @@ class I2CSlave(object):
             self._i2c_address = _i2c_address
         self._led      = LED(1)
         self._i2c      = None
-        self._debug    = False
+        self._debug    = True
         self._tx_count = 0
         self._mem      = bytearray(self.MEMORY_SIZE)
         self._motor_controller = MotorController(config, level)
-        # initialize response buffer with default ACK response
-        self._send_response(Command.ACK, 0.0, 0.0, 0.0, 0.0)
+        # keepalive timer:
+        self._last_command_time_ms = 0
+        self._keepalive_timeout_ms = 200
         self._log.info('ready on bus {} at 0x{:02X}'.format(self._i2c_id, self._i2c_address))
 
-    def _clear_mem(self):
-        self._mem = bytearray(self.MEMORY_SIZE)
-
+    def _clear_response_buffer(self):
+        '''
+        Clear the response buffer.
+        '''
+        self._mem[self.RSP_OFFSET:self.RSP_OFFSET + Payload.PACKET_SIZE] = bytearray(Payload.PACKET_SIZE)
+    
     def enable(self):
         '''
         Start I2C slave and register IRQ handler.
@@ -96,7 +101,6 @@ class I2CSlave(object):
         Stop I2C slave.
         '''
         if self._i2c:
-            self._clear_mem()
             self._i2c.deinit()
             self._i2c = None
             self._log.info('I2C slave disabled')
@@ -107,15 +111,16 @@ class I2CSlave(object):
         '''
         flags = i2c_target.irq().flags()
         if flags & I2CTarget.IRQ_END_WRITE:
-            # clear response buffer immediately to prevent master from reading stale data
-            self._mem[self.RSP_OFFSET:self.RSP_OFFSET + Payload.PACKET_SIZE] = b'\x00' * Payload.PACKET_SIZE
             # master wrote a command - process it immediately
             try:
+                self._led.on()
+                # update timestamp for keepalive
+                self._last_command_time_ms = time.ticks_ms()
                 # parse command payload from command buffer
                 cmd_bytes = bytes(self._mem[self.CMD_OFFSET:self.CMD_OFFSET + Payload.PACKET_SIZE])
                 cmd_payload = Payload.from_bytes(cmd_bytes)
-                if self._debug:
-                    self._log.debug('rx: {}'.format(cmd_payload))
+#               if self._debug:
+#                   self._log.debug('rx: {}'.format(cmd_payload))
                 # process command based on Command
                 command = Command.from_code(cmd_payload.code)
                 if command is Command.PING:
@@ -133,7 +138,6 @@ class I2CSlave(object):
                 else:
                     self._handle_error(1, 'unknown command: {}'.format(cmd_payload.code))
                 self._tx_count += 1
-                self._led.toggle()
 
             except ValueError as e:
                 # bad payload - silently ignore sync header issues (i2cdetect probing)
@@ -150,9 +154,9 @@ class I2CSlave(object):
                 sys.print_exception(e)
                 self._handle_error(4, str(e))
         
-        if self._debug:
-            if flags & I2CTarget.IRQ_END_READ:
-                self._log.debug('master read response')
+#       if self._debug:
+#           if flags & I2CTarget.IRQ_END_READ:
+#               self._log.debug('master read response')
 
     def _send_response(self, command, pfwd, sfwd, paft, saft):
         '''
@@ -165,16 +169,34 @@ class I2CSlave(object):
             response_bytes = response.to_bytes() 
             # write to response buffer atomically using slice assignment
             self._mem[self.RSP_OFFSET:self.RSP_OFFSET + len(response_bytes)] = response_bytes
-            if self._debug:
-                # debug: Show entire memory map
-                self._log.debug('full memory: {}'.format(' '.join('{:02x}'.format(b) for b in self._mem)))
-                self._log.debug('response ready: {}'.format(response))
+#           if self._debug:
+#               # debug: Show entire memory map
+#               self._log.debug('full memory: {}'.format(' '.join('{:02x}'.format(b) for b in self._mem)))
+#               self._log.debug('response ready: {}'.format(response))
             time.sleep_us(50) # make sure response is committed before IRQ completes
+
         except Exception as e:
             self._log.error('{} raised sending response: {}'.format(type(e), e))
             sys.print_exception(e)
+        finally:
+            self._led.off()
 
-    # command handlers ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+    # keepalive timer ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+
+    def check_keepalive(self):
+        '''
+        Check if keepalive timeout has expired and stop motors if needed.
+        Must be called periodically from main loop.
+        '''
+        if self._motor_controller.enabled and self._last_command_time_ms > 0:
+            elapsed = time.ticks_diff(time.ticks_ms(), self._last_command_time_ms)
+            if elapsed > self._keepalive_timeout_ms:
+                self._log.warning('keepalive timeout - stopping motors (connection lost)')
+                self._motor_controller.stop()
+                self._clear_response_buffer()
+                self._last_command_time_ms = 0 # reset to prevent repeated stops
+
+    # command handlers ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
     
     def _handle_ping(self):
         '''
@@ -205,7 +227,7 @@ class I2CSlave(object):
             payload: Command Payload containing motor speeds
         '''
         if self._debug:
-            self._log.info(Style.DIM + '[{:05d}] command: GO (pfwd={:.2f}, sfwd={:.2f}, paft={:.2f}, saft={:.2f})'.format(
+            self._log.info(Fore.GREEN + '[{:05d}] command: GO (pfwd={:.2f}, sfwd={:.2f}, paft={:.2f}, saft={:.2f})'.format(
                     self._tx_count, payload.pfwd, payload.sfwd, payload.paft, payload.saft))
         _response = self._motor_controller.go(payload.pfwd, payload.sfwd, payload.paft, payload.saft)
         if _response is Response.OKAY:
@@ -230,6 +252,7 @@ class I2CSlave(object):
         '''
         self._log.info('command: ENABLE')
         self._motor_controller.enable()
+        self._last_command_time_ms = time.ticks_ms() # for keepalive
         self._send_response(Command.ACK, 0.0, 0.0, 0.0, 0.0)
     
     def _handle_disable(self):
@@ -238,8 +261,11 @@ class I2CSlave(object):
         '''
         self._log.info('command: DISABLE')
         self._motor_controller.disable()
+        self._last_command_time_ms = 0  # clear keepalive timestamp when disabled
         self._send_response(Command.ACK, 0.0, 0.0, 0.0, 0.0)
-    
+        time.sleep_us(100)  # give master time to read the ACK response
+        self._clear_response_buffer()
+
     def _handle_error(self, error_code, message):
         '''
         Send ERROR response.

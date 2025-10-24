@@ -10,7 +10,7 @@
 # modified: 2025-10-21
 
 import sys
-
+import time
 from i2c_slave import I2CSlave
 from config_loader import ConfigLoader
 from core.logger import Logger, Level
@@ -31,7 +31,8 @@ def main():
     _slave.enable()
     try:
         while True:
-            pass
+            _slave.check_keepalive()
+            time.sleep_ms(50) # check every 50ms
     except KeyboardInterrupt:
         print('\nCtrl-C caught; exiting…')
         _slave.disable()

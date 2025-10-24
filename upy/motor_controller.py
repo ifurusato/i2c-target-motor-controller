@@ -36,6 +36,7 @@ class MotorController(Component):
         self._sfwd = 0.0
         self._paft = 0.0
         self._saft = 0.0
+        self._debug = False
         self._log.info('ready.')
 
     def get_speeds(self):
@@ -47,7 +48,8 @@ class MotorController(Component):
         '''
         if not self.enabled:
             return Response.FAIL
-        self._log.info(Fore.RED + 'STOP')
+        if self._debug:
+            self._log.info(Fore.RED + 'STOP')
         self._pfwd = 0.0
         self._sfwd = 0.0
         self._paft = 0.0
@@ -60,7 +62,8 @@ class MotorController(Component):
         '''
         if not self.enabled:
             return Response.FAIL
-        self._log.info(Fore.GREEN + 'GO (pfwd={:.2f}, sfwd={:.2f}, paft={:.2f}, saft={:.2f})'.format(pfwd, sfwd, paft, saft))
+        if self._debug:
+            self._log.info(Fore.GREEN + 'GO (pfwd={:.2f}, sfwd={:.2f}, paft={:.2f}, saft={:.2f})'.format(pfwd, sfwd, paft, saft))
         self._pfwd = pfwd
         self._sfwd = sfwd
         self._paft = paft
@@ -73,6 +76,8 @@ class MotorController(Component):
         '''
         if not self.enabled:
             Component.enable(self)
+            if self._debug:
+                self._log.info('enabled.')
             
     def disable(self):
         '''
@@ -81,10 +86,14 @@ class MotorController(Component):
         if self.enabled:
             self.stop()
             Component.disable(self)
+            if self._debug:
+                self._log.info('disabled.')
             
     def close(self):
         if not self.closed:
             self.disable()
             Component.close(self)
+            if self._debug:
+                self._log.info('closed.')
 
 #EOF
