@@ -22,7 +22,14 @@ init()
 from core.logger import Level, Logger
 from core.component import Component
 from core.config_loader import ConfigLoader
-from hardware.digital_pot import DigitalPotentiometer
+
+__IOE_AVAILABLE = False
+try:
+    import ioexpander as io
+    from hardware.digital_pot import DigitalPotentiometer
+    __IOE_AVAILABLE = True
+except ModuleNotFoundError:
+    pass
 
 # add ./upy/ to sys.path
 if os.path.isdir("upy") and "upy" not in sys.path:
@@ -248,18 +255,16 @@ def main():
         _log.info('creating I2C Master Controller…')
         master = I2CMasterController(config, i2c_id=1, i2c_address=0x43, level=Level.INFO)
 
-
         if DELAY_TUNING_TEST:
 
-
-            _log.info('creating digital potentiometer…')
-            digital_pot = DigitalPotentiometer(config, level=_level)
-            digital_pot.set_output_range(0.0, 1.0)
-
-            # initially set delay
-            _value = digital_pot.get_scaled_value(False) # values 0.0-1.0
-            _delay_usec = _value * 2000.0
-            master.set_tx_delay(_delay_usec)
+            if __IOE_AVAILABLE:
+                _log.info('creating digital potentiometer…')
+                digital_pot = DigitalPotentiometer(config, level=_level)
+                digital_pot.set_output_range(0.0, 1.0)
+                # initially set delay
+                _value = digital_pot.get_scaled_value(False) # values 0.0-1.0
+                _delay_usec = _value * 2000.0
+                master.set_tx_delay(_delay_usec)
 
             _log.info('enabling (PING/ACK handshake)…')
             master.enable()
@@ -268,14 +273,17 @@ def main():
             _log.info('starting delay tuning…  (Ctrl-C to exit)')
             while True:
 
-                _value = digital_pot.get_scaled_value(False) # values 0.0-1.0
+                _value = 0.3
+                if __IOE_AVAILABLE:
+                    _value = digital_pot.get_scaled_value(False) # values 0.0-1.0
                 _target_speed = 1.0 - abs((_value * 2.0) - 1.0)
                 _log.info(Fore.MAGENTA + 'target speed: {:4.2f}'.format(_target_speed))
 
                 _delay_usec = _value * 2000.0
                 master.set_tx_delay(_delay_usec)
                 if isclose(_target_speed, 0.0, abs_tol=0.08):
-                    digital_pot.set_black() # only on digital pot
+                    if __IOE_AVAILABLE:
+                        digital_pot.set_black() # only on digital pot
 #                   _motor_controller.set_speed(Orientation.ALL, 0.0)
 
                     _log.info('stopping motors…')
@@ -283,7 +291,8 @@ def main():
 #                   _log.info(Fore.GREEN + 'response: {}'.format(response))
 
                 else:
-                    digital_pot.set_rgb(digital_pot.value) # only on digital pot
+                    if __IOE_AVAILABLE:
+                        digital_pot.set_rgb(digital_pot.value) # only on digital pot
 #                   _motor_controller.set_speed(Orientation.ALL, _value)
                     _log.info('setting motor speeds ({:d}%)…'.format(round(_target_speed * 100)))
                     response = master.set_motor_speeds(_target_speed, _target_speed, _target_speed, _target_speed)
@@ -335,8 +344,9 @@ def main():
     except Exception as e:
         _log.error('{} raised during test: {}\n{}'.format(type(e), e, traceback.print_exc()))
     finally:
-        if digital_pot:
-            digital_pot.close()
+        if __IOE_AVAILABLE:
+            if digital_pot:
+                digital_pot.close()
         if master:
             _log.info(Fore.YELLOW + '\n8. Cleaning up...' + Style.RESET_ALL)
             master.disable()
